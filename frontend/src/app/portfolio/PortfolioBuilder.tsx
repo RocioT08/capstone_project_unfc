@@ -27,6 +27,7 @@ import {
 import { usePDF } from "react-to-pdf";
 import { TourButton } from "@/components/TourButton";
 import type { TourStep } from "@/hooks/use-shepherd-tour";
+import { SparkChat } from "@/components/SparkChat";
 
 const COLORS = [
   "#0088FE",
@@ -1007,6 +1008,21 @@ export function PortfolioBuilder({ assets }: PortfolioBuilderProps) {
           </div>
         </div>
       )}
+            {/* ── SparkChat with portfolio context ── */}
+            <SparkChat
+              context={
+                      results
+                        ? {
+                            type: "portfolio_optimize",
+                            data: {
+                              ...results,
+                              // también incluimos stats si están disponibles
+                              ...(stats ? { individual_stats: stats.individual, advanced: stats.advanced } : {}),
+                            },
+                          }
+                        : undefined
+        }
+      />
     </div>
   );
 }
