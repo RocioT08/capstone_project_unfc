@@ -38,7 +38,6 @@ export default function RootLayout({
           {children}
         </main>
         <Toaster />
-        <SparkChat /> 
       </body>
     </html>
   );

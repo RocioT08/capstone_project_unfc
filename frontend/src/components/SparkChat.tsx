@@ -25,10 +25,15 @@ interface Message {
   isError?: boolean;
 }
 
+interface SparkChatProps {
+  context?: {
+    type: "portfolio_optimize" | "portfolio_stats" | "forecast" | "analyze";
+    data: unknown;
+  };
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
-const API_URL = (
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
-).replace("/api/v1", "");
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 const SUGGESTED = [
   "What is a TFSA?",
@@ -51,35 +56,15 @@ function renderMd(text: string) {
 }
 
 // ─── SparkChat Component ──────────────────────────────────────────────────────
-export function SparkChat() {
+export function SparkChat({ context }: SparkChatProps = {}) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>(() => [
-    {
-      id: "welcome",
-      role: "assistant",
-      content: WELCOME_CONTENT,
-      timestamp: new Date(),
-    },
+    { id: "welcome", role: "assistant", content: WELCOME_CONTENT, timestamp: new Date() },
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-
-  const [formattedTimes, setFormattedTimes] = useState<Record<string, string>>(
-    {}
-  );
-
-  useEffect(() => {
-    const times: Record<string, string> = {};
-    messages.forEach((msg) => {
-      times[msg.id] = msg.timestamp.toLocaleTimeString("en-CA", {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    });
-    setFormattedTimes(times);
-  }, [messages]);
 
   // Auto-scroll
   useEffect(() => {
@@ -115,10 +100,10 @@ export function SparkChat() {
         .map((m) => ({ role: m.role, content: m.content }));
 
       try {
-        const res = await fetch(`${API_URL}/api/chat`, {
+        const res = await fetch(`${API_URL}/chat`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: body, history }),
+          body: JSON.stringify({ message: body, history, context }),
         });
 
         if (!res.ok) throw new Error(`Server error ${res.status}`);
@@ -139,8 +124,7 @@ export function SparkChat() {
           {
             id: crypto.randomUUID(),
             role: "assistant",
-            content:
-              "Oops! I couldn't connect to the server. Please try again.",
+            content: "Oops! I couldn't connect to the server. Please try again.",
             timestamp: new Date(),
             isError: true,
           },
@@ -159,6 +143,9 @@ export function SparkChat() {
     }
   };
 
+  const fmt = (d: Date) =>
+    d.toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit" });
+
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <>
@@ -172,24 +159,15 @@ export function SparkChat() {
           flex items-center justify-center
           border transition-all duration-200
           shadow-[0_0_24px_rgba(0,212,255,0.25)]
-          ${
-            open
-              ? "bg-[hsl(222,47%,13%)] border-[hsl(222,47%,20%)] text-[hsl(215,20%,55%)] hover:text-white"
-              : "bg-cyan-400 border-cyan-300 text-[hsl(222,47%,5%)] hover:bg-cyan-300 hover:shadow-[0_0_32px_rgba(0,212,255,0.45)]"
+          ${open
+            ? "bg-[hsl(222,47%,13%)] border-[hsl(222,47%,20%)] text-[hsl(215,20%,55%)] hover:text-white"
+            : "bg-cyan-400 border-cyan-300 text-[hsl(222,47%,5%)] hover:bg-cyan-300 hover:shadow-[0_0_32px_rgba(0,212,255,0.45)]"
           }
         `}
       >
         {open ? (
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-          >
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
           </svg>
         ) : (
           <span className="text-2xl leading-none">⚡</span>
@@ -208,11 +186,7 @@ export function SparkChat() {
           overflow-hidden
           transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)]
           origin-bottom-right
-          ${
-            open
-              ? "scale-100 opacity-100 pointer-events-auto"
-              : "scale-90 opacity-0 pointer-events-none"
-          }
+          ${open ? "scale-100 opacity-100 pointer-events-auto" : "scale-90 opacity-0 pointer-events-none"}
         `}
         role="dialog"
         aria-label="SparkChat investment chatbot"
@@ -223,9 +197,7 @@ export function SparkChat() {
             ⚡
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-bold text-white tracking-wide">
-              SparkChat
-            </p>
+            <p className="text-sm font-bold text-white tracking-wide">SparkChat</p>
             <p className="text-[11px] text-[hsl(215,20%,55%)] flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-pulse" />
               Canadian Investment Guide
@@ -236,34 +208,23 @@ export function SparkChat() {
             className="text-[hsl(215,20%,55%)] hover:text-white transition-colors p-1"
             aria-label="Close"
           >
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-            >
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
         </div>
 
         {/* Messages */}
-        <div
-          className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3 scroll-smooth
+        <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3 scroll-smooth
           [&::-webkit-scrollbar]:w-1
           [&::-webkit-scrollbar-track]:bg-transparent
           [&::-webkit-scrollbar-thumb]:bg-[hsl(222,47%,18%)]
-          [&::-webkit-scrollbar-thumb]:rounded-full"
-        >
+          [&::-webkit-scrollbar-thumb]:rounded-full">
+
           {messages.map((msg) => (
             <div
               key={msg.id}
-              className={`flex items-end gap-2 animate-[fadeSlideUp_0.22s_ease_forwards] ${
-                msg.role === "user" ? "flex-row-reverse" : ""
-              }`}
+              className={`flex items-end gap-2 animate-[fadeSlideUp_0.22s_ease_forwards] ${msg.role === "user" ? "flex-row-reverse" : ""}`}
             >
               {/* Avatar (assistant only) */}
               {msg.role === "assistant" && (
@@ -274,10 +235,9 @@ export function SparkChat() {
 
               <div
                 className={`max-w-[82%] px-3.5 py-2.5 rounded-2xl
-                  ${
-                    msg.role === "user"
-                      ? "bg-cyan-400 text-[hsl(222,47%,5%)] rounded-br-sm"
-                      : msg.isError
+                  ${msg.role === "user"
+                    ? "bg-cyan-400 text-[hsl(222,47%,5%)] rounded-br-sm"
+                    : msg.isError
                       ? "bg-[hsl(0,40%,12%)] border border-[hsl(0,60%,25%)] text-[hsl(0,84%,75%)] rounded-bl-sm"
                       : "bg-[hsl(222,47%,10%)] border border-[hsl(222,47%,16%)] text-[hsl(0,0%,90%)] rounded-bl-sm"
                   }`}
@@ -286,15 +246,9 @@ export function SparkChat() {
                   className="text-[13px] leading-relaxed m-0"
                   dangerouslySetInnerHTML={{ __html: renderMd(msg.content) }}
                 />
-                <span
-                  className={`block text-[10px] mt-1.5 text-right
-                  ${
-                    msg.role === "user"
-                      ? "text-[hsl(222,47%,30%)]"
-                      : "text-[hsl(215,20%,40%)]"
-                  }`}
-                >
-                  {formattedTimes[msg.id] ?? ""}
+                <span className={`block text-[10px] mt-1.5 text-right
+                  ${msg.role === "user" ? "text-[hsl(222,47%,30%)]" : "text-[hsl(215,20%,40%)]"}`}>
+                  {fmt(msg.timestamp)}
                 </span>
               </div>
             </div>
@@ -311,10 +265,7 @@ export function SparkChat() {
                   <span
                     key={i}
                     className="w-1.5 h-1.5 rounded-full bg-[hsl(215,20%,45%)] animate-bounce"
-                    style={{
-                      animationDelay: `${delay}s`,
-                      animationDuration: "1s",
-                    }}
+                    style={{ animationDelay: `${delay}s`, animationDuration: "1s" }}
                   />
                 ))}
               </div>
@@ -370,14 +321,7 @@ export function SparkChat() {
               hover:shadow-[0_0_16px_rgba(0,212,255,0.4)]"
             aria-label="Send"
           >
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-            >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <line x1="22" y1="2" x2="11" y2="13" />
               <polygon points="22 2 15 22 11 13 2 9 22 2" />
             </svg>

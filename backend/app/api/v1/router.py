@@ -17,7 +17,7 @@ from app.api.v1.endpoints.forecast import router as forecast_router
 from app.api.v1.endpoints.health import router as health_router
 from app.api.v1.endpoints.portfolio import router as portfolio_router
 from app.api.v1.endpoints.prices import router as prices_router
-
+from app.api.v1.endpoints.chat import router as chat_router
 api_router = APIRouter()
 
 api_router.include_router(health_router, prefix="/health", tags=["health"])
@@ -26,3 +26,18 @@ api_router.include_router(prices_router, prefix="/prices", tags=["prices"])
 api_router.include_router(forecast_router, prefix="/forecast", tags=["forecast"])
 api_router.include_router(analyze_router, prefix="/analyze", tags=["analyze"])
 api_router.include_router(portfolio_router, prefix="/portfolio", tags=["portfolio"])
+api_router.include_router(chat_router,     prefix="/chat",      tags=["chat"])
+
+
+
+
+
+
+
+
+
+
+
+
+
+
