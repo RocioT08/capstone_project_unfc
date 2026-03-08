@@ -4,7 +4,7 @@ app/api/v1/endpoints/chat.py
 SparkChat — AI-powered Canadian investment education chatbot.
 Follows the same pattern as all other v1 endpoints in this project.
 
-LLM: Groq (free tier) — set GROQ_API_KEY in your .env
+LLM: Groq (free tier) — set GROQ_API_KEY in your .env also for voice transcription.
 """
 
 import json
