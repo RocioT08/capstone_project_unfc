@@ -54,8 +54,6 @@ neuralforecast>=1.7.0
 lightgbm>=4.0.0
 torch>=2.0.0
 lightning>=2.0.0
-# LSTM stack artifact (load_model) — used by stock/stack_ridge_meta.py
-tensorflow>=2.15.0
 
 # ── Caching ───────────────────────────────────────────────────────────────────
 fastapi-cache2==0.2.2
