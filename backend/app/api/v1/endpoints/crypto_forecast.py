@@ -90,35 +90,37 @@ class CryptoForecastResponse(BaseModel):
 
 def _load_model(symbol: str, db: Client, force_reload: bool = False) -> Any:
     """
-    Load assembly model for symbol from cache or local disk.
+    Load assembly model for symbol from cache, local disk, or Supabase Storage.
 
-    Args:
-        symbol:       Ticker e.g. 'BTC-USD'.
-        db:           Supabase client (unused, kept for signature compatibility).
-        force_reload: If True, bypass cache and reload from disk.
-
-    Returns:
-        Fitted CryptoAssemblyForecaster instance.
+    Order:
+      1. In-memory cache (fastest)
+      2. Local disk at CHECKPOINTS_DIR (dev / already-downloaded)
+      3. Supabase Storage bucket 'models' (production / Render)
 
     Raises:
-        HTTPException 404: Model file not found on disk.
-        HTTPException 503: Model deserialization failed.
+        HTTPException 404: Model not found locally or in Storage.
+        HTTPException 503: Model deserialization or download failed.
     """
     if not force_reload and symbol in _model_cache:
         logger.info("Model cache hit for %s", symbol)
         return _model_cache[symbol]
 
     file_path = CHECKPOINTS_DIR / f"assembly_{symbol}.joblib"
-    logger.info("Loading model from disk: %s", file_path)
 
-    if not file_path.exists():
-        raise HTTPException(
-            status_code=404,
-            detail=(
-                f"No trained model found for '{symbol}'. "
-                f"Run the training script first: python scripts/train_crypto_assembly.py"
-            ),
-        )
+    # ── Download from Supabase Storage if not on disk ─────────────────────────
+    if not file_path.exists() or force_reload:
+        storage_name = f"assembly_{symbol}.joblib"
+        logger.info("Local model not found for %s — downloading from Storage...", symbol)
+        try:
+            data: bytes = db.storage.from_("models").download(storage_name)
+            CHECKPOINTS_DIR.mkdir(parents=True, exist_ok=True)
+            file_path.write_bytes(data)
+            logger.info("Model downloaded and saved: %s (%.1f MB)", file_path, len(data) / 1e6)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Model for '{symbol}' not found in Storage: {exc}",
+            ) from exc
 
     try:
         model = joblib.load(file_path)
