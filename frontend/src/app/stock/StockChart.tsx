@@ -48,7 +48,7 @@ export function StockChart({
   isCrypto = false,
 }: StockChartProps) {
   const [model, setModel] = useState<"chronos" | "assembly">("chronos");
-  const interval: "1d" | "1wk" | "1mo" = "1d";
+  let interval: "1d" | "1wk" | "1mo" = "1d";
   const [viewDays, setViewDays] = useState<30 | 90 | 180 | 365 | 0>(30);
   const [forecast, setForecast] = useState<ForecastResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
