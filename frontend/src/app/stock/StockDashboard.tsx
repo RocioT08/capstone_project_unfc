@@ -171,7 +171,8 @@ export function StockDashboard({ assets, initialSymbol, initialPrices, initialSt
     if (!syncSymbol) return;
     setIsSyncing(true);
     try {
-      await api.syncAsset(syncSymbol);
+      const assetType = syncSymbol.toUpperCase().endsWith("-USD") ? "crypto" : "stock";
+      await api.syncAsset(syncSymbol, assetType);
       toast({ title: "Sync Successful", description: `${syncSymbol} has been synced.` });
       router.push(`/stock?symbol=${syncSymbol.toUpperCase()}&from=${fromDate}&to=${toDate}`);
       router.refresh();
