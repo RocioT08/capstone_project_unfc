@@ -123,7 +123,15 @@ def _load_model(symbol: str, db: Client, force_reload: bool = False) -> Any:
             ) from exc
 
     try:
-        model = joblib.load(file_path)
+        # Remap MPS (Apple Silicon) tensors to CPU for cross-platform loading.
+        # Models trained on Mac save tensors on MPS device; Linux has no MPS.
+        import torch
+        _orig_torch_load = torch.load
+        torch.load = lambda *a, **kw: _orig_torch_load(*a, **{**kw, "map_location": "cpu"})
+        try:
+            model = joblib.load(file_path)
+        finally:
+            torch.load = _orig_torch_load
     except Exception as exc:
         raise HTTPException(
             status_code=503,
