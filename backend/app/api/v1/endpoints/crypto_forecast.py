@@ -132,6 +132,19 @@ def _load_model(symbol: str, db: Client, force_reload: bool = False) -> Any:
             model = joblib.load(file_path)
         finally:
             torch.load = _orig_torch_load
+
+        # Move all sub-model PyTorch modules from MPS → CPU.
+        cpu = torch.device("cpu")
+        for attr in vars(model).values():
+            if hasattr(attr, "_device"):
+                attr._device = cpu
+            if hasattr(attr, "_model") and hasattr(attr._model, "to"):
+                attr._model = attr._model.to(cpu)
+            # NeuralForecast objects store models in .models list
+            if hasattr(attr, "models"):
+                for m in attr.models:
+                    if hasattr(m, "to"):
+                        m.to(cpu)
     except Exception as exc:
         raise HTTPException(
             status_code=503,
