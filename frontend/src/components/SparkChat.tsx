@@ -2,12 +2,19 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 
+interface ChartImage {
+  ticker: string;
+  period: string;
+  src: string;
+}
+
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
   timestamp: Date;
   isError?: boolean;
+  charts?: ChartImage[];
 }
 
 interface SparkChatProps {
@@ -43,6 +50,37 @@ function stripMd(text: string) {
     .replace(/\*\*(.*?)\*\*/g, "$1")
     .replace(/\*(.*?)\*/g, "$1")
     .replace(/<[^>]+>/g, "");
+}
+
+const CHART_TAG_RE = /\[CHART:([^:\]]+):([^\]]+)\]/g;
+
+async function fetchCharts(reply: string, apiUrl: string): Promise<ChartImage[]> {
+  const tags: Array<{ ticker: string; period: string }> = [];
+  let m: RegExpExecArray | null;
+  const re = new RegExp(CHART_TAG_RE.source, "g");
+  while ((m = re.exec(reply)) !== null) {
+    tags.push({ ticker: m[1], period: m[2] });
+  }
+  if (!tags.length) return [];
+  const results = await Promise.all(
+    tags.map(async ({ ticker, period }) => {
+      try {
+        const r = await fetch(
+          `${apiUrl}/chat/chart?ticker=${encodeURIComponent(ticker)}&period=${encodeURIComponent(period)}`
+        );
+        if (!r.ok) return null;
+        const j = await r.json();
+        return { ticker, period, src: j.image } as ChartImage;
+      } catch {
+        return null;
+      }
+    })
+  );
+  return results.filter((x): x is ChartImage => x !== null);
+}
+
+function cleanChartTags(text: string): string {
+  return text.replace(/\[CHART:[^\]]+\]/g, "").trim();
 }
 
 type VoiceStep =
@@ -198,18 +236,20 @@ export function SparkChat({ context }: SparkChatProps = {}) {
         });
         if (!res.ok) throw new Error(`${res.status}`);
         const data = await res.json();
+        const charts = await fetchCharts(data.reply, API_URL);
 
         setMessages((prev) => [
           ...prev,
           {
             id: crypto.randomUUID(),
             role: "assistant",
-            content: data.reply,
+            content: cleanChartTags(data.reply),
             timestamp: new Date(),
+            charts: charts.length ? charts : undefined,
           },
         ]);
 
-        speakAndListen(data.reply);
+        speakAndListen(cleanChartTags(data.reply));
       } catch {
         setMessages((prev) => [
           ...prev,
@@ -397,13 +437,15 @@ export function SparkChat({ context }: SparkChatProps = {}) {
         });
         if (!res.ok) throw new Error(`${res.status}`);
         const data = await res.json();
+        const charts = await fetchCharts(data.reply, API_URL);
         setMessages((prev) => [
           ...prev,
           {
             id: crypto.randomUUID(),
             role: "assistant",
-            content: data.reply,
+            content: cleanChartTags(data.reply),
             timestamp: new Date(),
+            charts: charts.length ? charts : undefined,
           },
         ]);
       } catch {
@@ -636,28 +678,38 @@ export function SparkChat({ context }: SparkChatProps = {}) {
                   ⚡
                 </div>
               )}
-              <div
-                className={`max-w-[82%] px-3.5 py-2.5 rounded-2xl ${
-                  msg.role === "user"
-                    ? "bg-cyan-400 text-[hsl(222,47%,5%)] rounded-br-sm"
-                    : msg.isError
-                    ? "bg-[hsl(0,40%,12%)] border border-[hsl(0,60%,25%)] text-[hsl(0,84%,75%)] rounded-bl-sm"
-                    : "bg-[hsl(222,47%,10%)] border border-[hsl(222,47%,16%)] text-[hsl(0,0%,90%)] rounded-bl-sm"
-                }`}
-              >
-                <p
-                  className="text-[13px] leading-relaxed m-0"
-                  dangerouslySetInnerHTML={{ __html: renderMd(msg.content) }}
-                />
-                <span
-                  className={`block text-[10px] mt-1.5 text-right ${
+              <div className="flex flex-col gap-2 max-w-[82%]">
+                <div
+                  className={`px-3.5 py-2.5 rounded-2xl ${
                     msg.role === "user"
-                      ? "text-[hsl(222,47%,30%)]"
-                      : "text-[hsl(215,20%,40%)]"
+                      ? "bg-cyan-400 text-[hsl(222,47%,5%)] rounded-br-sm"
+                      : msg.isError
+                      ? "bg-[hsl(0,40%,12%)] border border-[hsl(0,60%,25%)] text-[hsl(0,84%,75%)] rounded-bl-sm"
+                      : "bg-[hsl(222,47%,10%)] border border-[hsl(222,47%,16%)] text-[hsl(0,0%,90%)] rounded-bl-sm"
                   }`}
                 >
-                  {fmt(msg.timestamp)}
-                </span>
+                  <p
+                    className="text-[13px] leading-relaxed m-0"
+                    dangerouslySetInnerHTML={{ __html: renderMd(msg.content) }}
+                  />
+                  <span
+                    className={`block text-[10px] mt-1.5 text-right ${
+                      msg.role === "user"
+                        ? "text-[hsl(222,47%,30%)]"
+                        : "text-[hsl(215,20%,40%)]"
+                    }`}
+                  >
+                    {fmt(msg.timestamp)}
+                  </span>
+                </div>
+                {msg.charts?.map((c) => (
+                  <img
+                    key={`${c.ticker}-${c.period}`}
+                    src={c.src}
+                    alt={`${c.ticker} ${c.period} chart`}
+                    className="w-full rounded-xl border border-[hsl(222,47%,18%)] shadow-md"
+                  />
+                ))}
               </div>
             </div>
           ))}
