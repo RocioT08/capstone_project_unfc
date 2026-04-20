@@ -112,8 +112,8 @@ def _build_features(ohlcv: pd.DataFrame) -> pd.DataFrame:
 
     feats = pd.DataFrame(index=df.index)
 
-    # Normalised close (prevents scale dominance)
-    feats["close_norm"] = (close - close.min()) / (close.max() - close.min() + 1e-8)
+    # Rolling standardization — stable across price regimes (vs global min/max)
+    feats["close_norm"] = (close - close.rolling(30).mean()) / (close.rolling(30).std() + 1e-8)
 
     # Log returns
     feats["returns"] = np.log(close / close.shift(1))
