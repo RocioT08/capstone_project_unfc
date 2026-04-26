@@ -36,7 +36,7 @@ export default function Home() {
         <div className="shrink-0">
           <Image
             src="/agent-avatar.png"
-            alt="Foxy the investment guide"
+            alt="Spark the investment guide"
             width={290}
             height={290}
             className="drop-shadow-[0_0_40px_rgba(0,212,255,0.15)]"
@@ -86,11 +86,11 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── Foxy guide card ── */}
+      {/* ── Spark guide card ── */}
       <section className="rounded-2xl border border-white/8 bg-white/[0.03] p-6 flex flex-col sm:flex-row items-center gap-6 w-full max-w-3xl mx-auto backdrop-blur-sm">
         <Image
           src="/agent-avatar.png"
-          alt="Foxy"
+          alt="Spark"
           width={88}
           height={88}
           className="shrink-0 drop-shadow-lg"

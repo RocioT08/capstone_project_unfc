@@ -270,7 +270,8 @@ async def speak_text(request: SpeakRequest):
     import boto3
     from fastapi.responses import StreamingResponse
 
-    text = request.text[:3000]  # Polly limit safety
+    import html
+    text = html.escape(request.text[:3000])  # escape &, <, > so SSML stays valid
 
     try:
         polly = boto3.client(
