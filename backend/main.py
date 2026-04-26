@@ -7,6 +7,12 @@ Run with:
     uvicorn backend.app.main:app --reload
 """
 
+import os
+
+# Prevent matplotlib from trying to initialise a display backend on headless servers.
+# Must be set before any import that might trigger matplotlib initialisation.
+os.environ.setdefault("MPLBACKEND", "Agg")
+
 import uvicorn
 from app.main import app as app  # Expose ASGI app for process managers (uvicorn main:app)
 

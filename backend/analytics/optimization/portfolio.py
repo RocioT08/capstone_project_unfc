@@ -19,7 +19,6 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
-from pypfopt import EfficientFrontier, HRPOpt, expected_returns, risk_models
 
 # ── Annualisation frequency mapping ──────────────────────────────────────────
 
@@ -97,6 +96,7 @@ def _mu_sigma(prices_df: pd.DataFrame, interval: str):
     Uses PyPortfolioOpt's ``mean_historical_return`` and ``sample_cov``
     with the correct annualisation frequency for the bar interval.
     """
+    from pypfopt import expected_returns, risk_models  # lazy — avoids slow startup
     freq = _FREQ.get(interval, 252)
     mu = expected_returns.mean_historical_return(prices_df, frequency=freq)
     S = risk_models.sample_cov(prices_df, frequency=freq)
@@ -135,6 +135,7 @@ def optimize(
     Raises:
         ValueError: Infeasible optimization target, or unknown target string.
     """
+    from pypfopt import EfficientFrontier  # lazy
     mu, S = _mu_sigma(prices_df, interval)
 
     # Independent random lower bound per asset (5 %–15 %, feasibility-capped).
@@ -202,6 +203,7 @@ def optimize_hrp(prices_df: pd.DataFrame) -> Dict[str, Any]:
             "HRP requires at least 2 assets with overlapping history."
         )
 
+    from pypfopt import HRPOpt  # lazy
     # Compute daily/periodic returns for the clusterer.
     returns = prices_df.pct_change().dropna()
 
@@ -246,6 +248,7 @@ def efficient_frontier_points(
     Returns:
         List of dicts with ``volatility``, ``expected_return``, ``sharpe``.
     """
+    from pypfopt import EfficientFrontier  # lazy
     mu, S = _mu_sigma(prices_df, interval)
 
     # Per-asset bounds generated once and reused across all frontier points

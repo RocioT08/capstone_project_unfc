@@ -1,7 +1,13 @@
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
-import { TrendingUp, BookOpen, ShieldCheck, BarChart3, PieChart } from "lucide-react";
+import {
+  TrendingUp,
+  BookOpen,
+  ShieldCheck,
+  BarChart3,
+  PieChart,
+} from "lucide-react";
 import { MouseTrail } from "@/components/MouseTrail";
 
 export default function Home() {
@@ -10,7 +16,10 @@ export default function Home() {
       <MouseTrail />
 
       {/* Background effects */}
-      <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
+      >
         {/* Subtle grid */}
         <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.025)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.025)_1px,transparent_1px)] [background-size:44px_44px]" />
         {/* Cyan glow top-right */}
@@ -53,7 +62,8 @@ export default function Home() {
           </h1>
 
           <p className="text-xl text-gray-400 leading-relaxed">
-            Explore how forecasting models and portfolio optimization work using real market data. No prior finance experience needed.
+            Explore how forecasting models and portfolio optimization work using
+            real market data. No prior finance experience needed.
           </p>
 
           <div className="flex flex-wrap gap-4 pt-2">
@@ -86,13 +96,19 @@ export default function Home() {
           className="shrink-0 drop-shadow-lg"
         />
         <div className="space-y-2">
-          <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Your Guide</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-gray-500">
+            Your Guide
+          </p>
           <h3 className="text-2xl font-bold text-white">
-            Hey! I&apos;m Foxy{" "}
-            <span role="img" aria-label="fox">🦊</span>
+            Hey! I&apos;m Spark{" "}
+            <span role="img" aria-label="fox">
+              🦊
+            </span>
           </h3>
           <p className="text-gray-400 text-base leading-relaxed">
-            I&apos;ll walk you through forecasting models, portfolio theory, and key investment concepts — step by step. No jargon, no pressure. Let&apos;s learn together!
+            I&apos;ll walk you through forecasting models, portfolio theory, and
+            key investment concepts — step by step. No jargon, no pressure.
+            Let&apos;s learn together!
           </p>
           <Link href="/learn">
             <Button
@@ -101,7 +117,7 @@ export default function Home() {
               className="mt-1 rounded-full border border-cyan-400/30 bg-cyan-400/10 text-cyan-400 hover:bg-cyan-400/20 font-semibold"
             >
               <BookOpen className="mr-2 h-4 w-4" />
-              Start Learning with Foxy
+              Start Learning with Spark
             </Button>
           </Link>
         </div>
@@ -109,14 +125,18 @@ export default function Home() {
 
       {/* ── Feature cards ── */}
       <section className="grid grid-cols-1 md:grid-cols-2 gap-5 w-full">
-        <Link href="/stock" className="group rounded-2xl border border-white/8 bg-white/[0.03] hover:border-cyan-400/40 hover:bg-cyan-400/5 transition-all p-6 flex flex-col gap-4 backdrop-blur-sm">
+        <Link
+          href="/stock"
+          className="group rounded-2xl border border-white/8 bg-white/[0.03] hover:border-cyan-400/40 hover:bg-cyan-400/5 transition-all p-6 flex flex-col gap-4 backdrop-blur-sm"
+        >
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-cyan-400/10">
             <BarChart3 className="h-6 w-6 text-cyan-400" />
           </div>
           <div>
             <h3 className="text-xl font-bold text-white">Forecasting</h3>
             <p className="text-gray-400 mt-1 leading-relaxed">
-              View price history and generate forecasts using EWM, Prophet, or Prophet+XGBoost models for any tracked asset.
+              View price history and generate forecasts using EWM, Prophet, or
+              Prophet+XGBoost models for any tracked asset.
             </p>
           </div>
           <span className="text-cyan-400 text-sm font-semibold flex items-center gap-1 group-hover:gap-2 transition-all">
@@ -124,14 +144,18 @@ export default function Home() {
           </span>
         </Link>
 
-        <Link href="/portfolio" className="group rounded-2xl border border-white/8 bg-white/[0.03] hover:border-violet-400/40 hover:bg-violet-400/5 transition-all p-6 flex flex-col gap-4 backdrop-blur-sm">
+        <Link
+          href="/portfolio"
+          className="group rounded-2xl border border-white/8 bg-white/[0.03] hover:border-violet-400/40 hover:bg-violet-400/5 transition-all p-6 flex flex-col gap-4 backdrop-blur-sm"
+        >
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-violet-500/10">
             <PieChart className="h-6 w-6 text-violet-400" />
           </div>
           <div>
             <h3 className="text-xl font-bold text-white">Portfolio Builder</h3>
             <p className="text-gray-400 mt-1 leading-relaxed">
-              Construct multi-asset portfolios and run PyPortfolioOpt to find the optimal weights for your goals.
+              Construct multi-asset portfolios and run PyPortfolioOpt to find
+              the optimal weights for your goals.
             </p>
           </div>
           <span className="text-violet-400 text-sm font-semibold flex items-center gap-1 group-hover:gap-2 transition-all">

@@ -25,7 +25,6 @@ from typing import Any, Dict, List
 
 import numpy as np
 import pandas as pd
-from scipy import stats
 
 # ── Annualisation factors ─────────────────────────────────────────────────────
 
@@ -104,11 +103,13 @@ def max_drawdown(prices: pd.Series) -> float:
 
 def skewness(prices: pd.Series) -> float:
     """Fisher skewness of log returns."""
+    from scipy import stats  # lazy — avoids slow startup
     return float(stats.skew(_log_returns(prices)))
 
 
 def kurtosis(prices: pd.Series) -> float:
     """Excess kurtosis of log returns (Fisher definition; normal = 0)."""
+    from scipy import stats  # lazy
     return float(stats.kurtosis(_log_returns(prices)))
 
 
