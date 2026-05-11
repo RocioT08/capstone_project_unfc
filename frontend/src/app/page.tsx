@@ -9,6 +9,7 @@ import {
   PieChart,
 } from "lucide-react";
 import { MouseTrail } from "@/components/MouseTrail";
+import { SparkChat } from "@/components/SparkChat";
 
 export default function Home() {
   return (
@@ -163,6 +164,8 @@ export default function Home() {
           </span>
         </Link>
       </section>
+
+      <SparkChat />
     </div>
   );
 }
