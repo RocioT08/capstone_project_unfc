@@ -217,6 +217,30 @@ def _inject_train_df_if_missing(model: Any, symbol: str, db: Client) -> None:
         logger.warning("Could not inject _train_df for %s: %s", symbol, exc)
 
 
+def _refresh_model_inputs(model: Any, symbol: str, db: Client) -> None:
+    """Refresh LightGBM and NHiTS inputs with current OHLCV from DB so price predictions reflect today's market."""
+    try:
+        from analytics.forecasting.crypto.lightgbm_forecaster import _build_lgb_features
+        from analytics.forecasting.crypto.nhits_forecaster import _build_features, _fetch_fear_greed
+
+        ohlcv = _fetch_ohlcv(symbol, db)
+        fear_greed = _fetch_fear_greed() if symbol in TICKERS_WITH_FEAR_GREED else None
+
+        lgb = getattr(model, "_lgb", None)
+        if lgb is not None:
+            feats = _build_lgb_features(ohlcv)
+            lgb._last_features = feats.iloc[-1].copy()
+            lgb._last_close = float(ohlcv["Close"].iloc[-1])
+
+        nhits = getattr(model, "_nhits", None)
+        if nhits is not None:
+            nhits._train_df = _build_features(ohlcv, fear_greed=fear_greed)
+
+        logger.info("Model inputs refreshed for %s (last row: %s)", symbol, ohlcv.index[-1].date())
+    except Exception as exc:
+        logger.warning("Could not refresh model inputs for %s: %s — using training data", symbol, exc)
+
+
 def _fetch_nova_sentiment(symbol: str) -> str:
     """
     Ask Nova 2 Lite for a one-word sentiment on the asset.
@@ -327,6 +351,16 @@ def _run_forecast(symbol: str, periods: int, db: Client, force_reload: bool, nov
     import torch
     model = _load_model(symbol, db, force_reload)
     _inject_train_df_if_missing(model, symbol, db)
+    _refresh_model_inputs(model, symbol, db)
+
+    # Patch _last_date so forecast dates start from today, not the training cutoff
+    last_date = pd.Timestamp.utcnow().normalize() - pd.Timedelta(days=1)
+    for _attr in ("_lgb", "_nhits", "_gru", "_tft"):
+        _sub = getattr(model, _attr, None)
+        if _sub is not None and hasattr(_sub, "_last_date"):
+            _sub._last_date = last_date
+    if hasattr(model, "_last_date"):
+        model._last_date = last_date
 
     # ── Force CPU on NHiTS trainer (Render has no MPS or CUDA) ───────────────
     os.environ["CUDA_VISIBLE_DEVICES"] = ""

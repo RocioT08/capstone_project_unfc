@@ -7,9 +7,9 @@ import { Home, TrendingUp, PieChart, BookOpen } from "lucide-react";
 
 const navItems = [
   { href: "/",          label: "Home",        icon: Home       },
+  { href: "/learn",     label: "Learn",       icon: BookOpen   },
   { href: "/stock",     label: "Forecasting", icon: TrendingUp },
   { href: "/portfolio", label: "Portfolio",   icon: PieChart   },
-  { href: "/learn",     label: "Learn",       icon: BookOpen   },
 ];
 
 export function NavBar() {

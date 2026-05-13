@@ -320,7 +320,7 @@ class NHiTSForecaster(BaseForecastor):
                 f"Re-instantiate with max_horizon>={periods} and refit."
             )
 
-        pred_df = self._nf.predict()
+        pred_df = self._nf.predict(df=self._train_df) if hasattr(self, "_train_df") else self._nf.predict()
         pred_df = pred_df.reset_index(drop=True).head(self.max_horizon)
 
         level   = int(self.confidence_level * 100)

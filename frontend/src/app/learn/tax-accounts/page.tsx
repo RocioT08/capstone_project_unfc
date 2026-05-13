@@ -1,5 +1,7 @@
 import ModulePageLayout, { ModulePageConfig } from "@/components/learn/ModulePageLayout";
 
+export const dynamic = "force-dynamic";
+
 const config: ModulePageConfig = {
   id: "tax-accounts",
   number: "03",
