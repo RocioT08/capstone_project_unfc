@@ -21,6 +21,7 @@ from app.api.v1.endpoints.chat import router as chat_router
 from app.api.v1.endpoints.crypto_forecast import router as crypto_forecast_router
 from app.api.v1.endpoints.news import router as news_router
 from app.api.v1.endpoints.nova_insight import router as nova_insight_router
+from app.api.v1.endpoints.learn import router as learn_router
 
 api_router = APIRouter()
 
@@ -34,6 +35,7 @@ api_router.include_router(chat_router,          prefix="/chat",           tags=[
 api_router.include_router(crypto_forecast_router, prefix="/crypto/forecast", tags=["crypto"])
 api_router.include_router(news_router, prefix="/news", tags=["news"])
 api_router.include_router(nova_insight_router, prefix="/nova/insight", tags=["nova"])
+api_router.include_router(learn_router, prefix="/learn", tags=["learn"])
 
 
 
