@@ -322,14 +322,16 @@ class NHiTSForecaster(BaseForecastor):
         pred_df = self._nf.predict(df=self._train_df) if hasattr(self, "_train_df") else self._nf.predict()
         pred_df = pred_df.reset_index(drop=True).head(self.max_horizon)
 
-        level   = int(self.confidence_level * 100)
-        col_pt  = "NHITS"
-        col_lo  = f"NHITS-lo-{level}"
-        col_hi  = f"NHITS-hi-{level}"
-
+        # Select columns by MEANING, not by name/alphabetical order. neuralforecast
+        # names the median "NHITS" (old) or "NHITS-median" (>=3.x) with MQLoss, so
+        # the point forecast is the column that is neither a -lo- nor -hi- bound.
         num_cols = [c for c in pred_df.columns if c not in ("unique_id", "ds")]
-        if col_pt not in pred_df.columns and len(num_cols) >= 3:
-            col_lo, col_pt, col_hi = sorted(num_cols)[:3]
+        lo_cols  = [c for c in num_cols if "-lo-" in c]
+        hi_cols  = [c for c in num_cols if "-hi-" in c]
+        pt_cols  = [c for c in num_cols if "-lo-" not in c and "-hi-" not in c]
+        col_pt = pt_cols[0] if pt_cols else num_cols[0]
+        col_lo = lo_cols[0] if lo_cols else col_pt
+        col_hi = hi_cols[0] if hi_cols else col_pt
 
         step = timedelta(days=self._freq_days)
         dates, pts, lbs, ubs = [], [], [], []
@@ -391,14 +393,14 @@ class NHiTSForecaster(BaseForecastor):
             pred_df = self._nf.predict(df=patched_df)
             pred_df = pred_df.reset_index(drop=True).head(self.max_horizon)
 
-            level  = int(self.confidence_level * 100)
-            col_pt = "NHITS"
-            col_lo = f"NHITS-lo-{level}"
-            col_hi = f"NHITS-hi-{level}"
-
+            # Select columns by meaning (see forecast() for the rationale).
             num_cols = [c for c in pred_df.columns if c not in ("unique_id", "ds")]
-            if col_pt not in pred_df.columns and len(num_cols) >= 3:
-                col_lo, col_pt, col_hi = sorted(num_cols)[:3]
+            lo_cols  = [c for c in num_cols if "-lo-" in c]
+            hi_cols  = [c for c in num_cols if "-hi-" in c]
+            pt_cols  = [c for c in num_cols if "-lo-" not in c and "-hi-" not in c]
+            col_pt = pt_cols[0] if pt_cols else num_cols[0]
+            col_lo = lo_cols[0] if lo_cols else col_pt
+            col_hi = hi_cols[0] if hi_cols else col_pt
 
             step = timedelta(days=self._freq_days)
             dates, pts, lbs, ubs = [], [], [], []
