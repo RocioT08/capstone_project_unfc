@@ -189,18 +189,17 @@ def _build_features(
     # ── Fear & Greed Index (optional, passed from caller — fetched once) ────
     fg = fear_greed
     if fg is not None:
-        # Normalise both index sides to UTC-midnight before merging
+        # Use plain date objects as keys to avoid pytz vs datetime.timezone.utc
+        # mismatch that causes dict lookup to miss in pandas >= 2.0.
         if out.index.tz is None:
-            fg_norm = fg.copy()
-            fg_norm.index = fg_norm.index.tz_localize(None).normalize()
-            out_norm_idx = out.index.normalize()
+            fg_dates = [t.date() for t in fg.index.tz_localize(None)]
+            out_dates = [t.date() for t in out.index]
         else:
-            fg_norm = fg.copy()
-            fg_norm.index = fg_norm.index.normalize()
-            out_norm_idx = out.index.tz_convert("UTC").normalize()
+            fg_dates = [t.date() for t in fg.index.tz_convert("UTC")]
+            out_dates = [t.date() for t in out.index.tz_convert("UTC")]
 
-        fg_map = dict(zip(fg_norm.index, fg_norm.values))
-        out["fear_greed"] = [fg_map.get(d, np.nan) for d in out_norm_idx]
+        fg_map = dict(zip(fg_dates, fg.values))
+        out["fear_greed"] = [fg_map.get(d, np.nan) for d in out_dates]
         out["fear_greed"] = out["fear_greed"].ffill().bfill()
 
         if out["fear_greed"].isna().all():
