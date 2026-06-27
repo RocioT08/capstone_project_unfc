@@ -88,12 +88,19 @@ def forecast(
     # Limit context to last 512 rows — Chronos-2 max context window.
     prices = prices.iloc[-512:]
 
+    # Chronos-2 expects tz-naive timestamps and a plain float target. A tz-aware
+    # index raises "Cannot change data-type for array of references" on newer
+    # chronos/numpy versions, so drop the timezone and force float64 here.
+    ts = prices.index
+    if getattr(ts, "tz", None) is not None:
+        ts = ts.tz_localize(None)
+
     # Single-series context DataFrame (Chronos-2 expects id, timestamp, target)
     context_df = pd.DataFrame(
         {
             "id": "0",
-            "timestamp": prices.index,
-            "target": prices.values,
+            "timestamp": ts,
+            "target": prices.to_numpy(dtype="float64"),
         }
     )
 
