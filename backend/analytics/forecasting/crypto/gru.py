@@ -245,6 +245,12 @@ class GRUForecaster(BaseForecastor):
 
         self._model: Optional[_GRUNet] = None
         self._feature_cols: List[str] = []
+        # Train-only feature standardization (mean/std fit on each window's
+        # training data → no leakage). Puts all features on a comparable scale
+        # so the GRU does not let large-magnitude inputs (e.g. macd) drown out
+        # small ones (e.g. returns, fear_greed).
+        self._feat_mean: Optional[pd.Series] = None
+        self._feat_std: Optional[pd.Series] = None
         self._close_min: float = 0.0
         self._close_max: float = 1.0
         self._last_close: float = 1.0
@@ -278,6 +284,15 @@ class GRUForecaster(BaseForecastor):
 
         feats = _build_features(ohlcv, fear_greed=fear_greed)
         self._feature_cols = list(feats.columns)
+
+        # ── Train-only standardization ───────────────────────────────────────
+        # Fit mean/std on THIS window's features only, then apply. In the
+        # walk-forward each window calls fit() fresh, so the scaler never sees
+        # test data — no look-ahead leakage. The target (cumulative log returns
+        # in _make_sequences) is unaffected, so the forecast output stays in USD.
+        self._feat_mean = feats.mean()
+        self._feat_std = feats.std()
+        feats = (feats - self._feat_mean) / (self._feat_std + 1e-8)
 
         X, y = self._make_sequences(feats, ohlcv["Close"].loc[feats.index])
 
