@@ -41,7 +41,7 @@ except ImportError:
 
 # ── Feature engineering ───────────────────────────────────────────────────────
 
-def _build_lgb_features(ohlcv: pd.DataFrame, lags: int = 14) -> pd.DataFrame:
+def _build_lgb_features(ohlcv: pd.DataFrame, lags: int = 14, fear_greed: Optional[pd.Series] = None) -> pd.DataFrame:
     """
     Build a rich tabular feature set from daily OHLCV data.
 
@@ -115,6 +115,17 @@ def _build_lgb_features(ohlcv: pd.DataFrame, lags: int = 14) -> pd.DataFrame:
     feats["day_of_week"] = df.index.dayofweek
     feats["day_of_month"] = df.index.day
 
+    # ── Market sentiment: optional Fear & Greed Index (0-100 -> 0-1) ──────
+    if fear_greed is not None and len(fear_greed) > 0:
+        fg = fear_greed.copy()
+        fg.index = pd.to_datetime(fg.index, utc=True)
+        fg_by_date = {ts.date(): float(v) for ts, v in zip(fg.index, fg.values)}
+        idx_utc = pd.to_datetime(feats.index, utc=True)
+        vals = [fg_by_date.get(d.date(), np.nan) for d in idx_utc]
+        fg_series = pd.Series(vals, index=feats.index).ffill().bfill()
+        if fg_series.notna().any():
+            feats["fear_greed"] = fg_series / 100.0
+
     return feats.dropna()
 
 
@@ -183,7 +194,7 @@ class LightGBMForecaster(BaseForecastor):
 
     # ── fit ──────────────────────────────────────────────────────────────
 
-    def fit(self, ohlcv: pd.DataFrame) -> None:
+    def fit(self, ohlcv: pd.DataFrame, fear_greed: Optional[pd.Series] = None) -> None:
         """
         Train one LightGBM regressor per forecast step (direct strategy).
 
@@ -204,7 +215,7 @@ class LightGBMForecaster(BaseForecastor):
         self._last_close = float(ohlcv["Close"].iloc[-1])
         self._freq_days = self._infer_freq_days(ohlcv.index)
 
-        feats = _build_lgb_features(ohlcv, lags=self.lags)
+        feats = _build_lgb_features(ohlcv, lags=self.lags, fear_greed=fear_greed)
         self._feature_cols = list(feats.columns)
         close_aligned = ohlcv["Close"].loc[feats.index]
 

@@ -83,7 +83,7 @@ class _GRUNet(nn.Module):  # type: ignore[misc]
 
 # ── Feature engineering ───────────────────────────────────────────────────────
 
-def _build_features(ohlcv: pd.DataFrame) -> pd.DataFrame:
+def _build_features(ohlcv: pd.DataFrame, fear_greed: Optional[pd.Series] = None) -> pd.DataFrame:
     """
     Compute technical indicators from daily OHLCV data.
 
@@ -152,6 +152,17 @@ def _build_features(ohlcv: pd.DataFrame) -> pd.DataFrame:
 
     # Volume ratio
     feats["vol_ratio"] = volume / (volume.rolling(20).mean() + 1e-8)
+
+    # ── Market sentiment: optional Fear & Greed Index (0-100 -> 0-1) ──────
+    if fear_greed is not None and len(fear_greed) > 0:
+        fg = fear_greed.copy()
+        fg.index = pd.to_datetime(fg.index, utc=True)
+        fg_by_date = {ts.date(): float(v) for ts, v in zip(fg.index, fg.values)}
+        idx_utc = pd.to_datetime(feats.index, utc=True)
+        vals = [fg_by_date.get(d.date(), np.nan) for d in idx_utc]
+        fg_series = pd.Series(vals, index=feats.index).ffill().bfill()
+        if fg_series.notna().any():
+            feats["fear_greed"] = fg_series / 100.0
 
     return feats.dropna()
 
@@ -244,7 +255,7 @@ class GRUForecaster(BaseForecastor):
 
     # ── fit ──────────────────────────────────────────────────────────────
 
-    def fit(self, ohlcv: pd.DataFrame) -> None:
+    def fit(self, ohlcv: pd.DataFrame, fear_greed: Optional[pd.Series] = None) -> None:
         """
         Build features and train the GRU on historical OHLCV data.
 
@@ -265,7 +276,7 @@ class GRUForecaster(BaseForecastor):
         self._last_date = ohlcv.index[-1]
         self._freq_days = self._infer_freq_days(ohlcv.index)
 
-        feats = _build_features(ohlcv)
+        feats = _build_features(ohlcv, fear_greed=fear_greed)
         self._feature_cols = list(feats.columns)
 
         X, y = self._make_sequences(feats, ohlcv["Close"].loc[feats.index])
