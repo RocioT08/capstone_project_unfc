@@ -210,6 +210,7 @@ class GRUForecaster(BaseForecastor):
         mc_samples: int = 100,
         confidence_level: float = 0.95,
         device: Optional[str] = None,
+        normalize_features: bool = False,
     ) -> None:
         """
         Args:
@@ -232,6 +233,12 @@ class GRUForecaster(BaseForecastor):
         self.lr = lr
         self.mc_samples = mc_samples
         self.confidence_level = confidence_level
+        # Per-window feature standardization. Default OFF: empirically it helps
+        # large-cap majors (BTC/ETH) marginally but hurts volatile altcoins
+        # (BNB/SOL/DOGE) by 1-2pp MAPE, because their fat-tailed, short-history
+        # feature distributions yield unstable scaling statistics. Kept as a flag
+        # so the ablation is reproducible.
+        self.normalize_features = normalize_features
 
         if device is None:
             if torch.cuda.is_available():
@@ -285,14 +292,15 @@ class GRUForecaster(BaseForecastor):
         feats = _build_features(ohlcv, fear_greed=fear_greed)
         self._feature_cols = list(feats.columns)
 
-        # ── Train-only standardization ───────────────────────────────────────
-        # Fit mean/std on THIS window's features only, then apply. In the
-        # walk-forward each window calls fit() fresh, so the scaler never sees
-        # test data — no look-ahead leakage. The target (cumulative log returns
-        # in _make_sequences) is unaffected, so the forecast output stays in USD.
-        self._feat_mean = feats.mean()
-        self._feat_std = feats.std()
-        feats = (feats - self._feat_mean) / (self._feat_std + 1e-8)
+        # ── Optional train-only standardization (default OFF) ─────────────────
+        # Fit mean/std on THIS window's features only, then apply. No leakage
+        # (each walk-forward window refits). Disabled by default because it
+        # degrades altcoin accuracy; enable via normalize_features=True to
+        # reproduce the ablation. Target (log returns) is unaffected → output USD.
+        if self.normalize_features:
+            self._feat_mean = feats.mean()
+            self._feat_std = feats.std()
+            feats = (feats - self._feat_mean) / (self._feat_std + 1e-8)
 
         X, y = self._make_sequences(feats, ohlcv["Close"].loc[feats.index])
 
