@@ -162,6 +162,7 @@ class LightGBMForecaster(BaseForecastor):
         learning_rate: float = 0.05,
         num_leaves: int = 31,
         confidence_level: float = 0.95,
+        predict_returns: bool = False,
     ) -> None:
         """
         Args:
@@ -179,6 +180,12 @@ class LightGBMForecaster(BaseForecastor):
         self.learning_rate = learning_rate
         self.num_leaves = num_leaves
         self.confidence_level = confidence_level
+        # Forecast target mode. Default False = predict absolute price (original).
+        # True = predict cumulative log return, reconstruct price via
+        # last_close*exp(r) — removes the tree extrapolation ceiling, which helps
+        # strongly-trending coins (e.g. BNB) but is coin-dependent. Kept as a flag
+        # so both are reproducible for the paper ablation.
+        self.predict_returns = predict_returns
 
         # One mean model + two quantile models per step (up to 4 steps)
         self._models_mean: List[lgb.LGBMRegressor] = []
@@ -228,13 +235,13 @@ class LightGBMForecaster(BaseForecastor):
         self._models_upper = []
 
         for h in range(1, self.max_horizon + 1):  # one model per step up to max_horizon
-            # Predict the cumulative log return over h steps, NOT the absolute
-            # price. An absolute-price target caps the model at the training-max
-            # price (trees cannot extrapolate above values seen in training), so
-            # on an up-trending coin it structurally under-predicts. Returns are
-            # scale-free and stationary → no ceiling. Price is reconstructed at
-            # inference via last_close * exp(return), so the output stays in USD.
-            target = np.log(close_aligned.shift(-h) / close_aligned).dropna()
+            # Target: absolute price (default) or cumulative log return (flag).
+            # Returns remove the tree extrapolation ceiling but are coin-dependent;
+            # absolute is the original, simpler default. See predict_returns docstring.
+            if self.predict_returns:
+                target = np.log(close_aligned.shift(-h) / close_aligned).dropna()
+            else:
+                target = close_aligned.shift(-h).dropna()
             X = feats.loc[target.index]
 
             # Mean model
@@ -316,13 +323,17 @@ class LightGBMForecaster(BaseForecastor):
         last_close = float(self._last_close)
         for h in range(periods):
             date = self._last_date + step * (h + 1)
-            # Models output cumulative log returns → reconstruct USD price.
-            r_pt = float(self._models_mean[h].predict(X_last)[0])
-            r_lb = float(self._models_lower[h].predict(X_last)[0])
-            r_ub = float(self._models_upper[h].predict(X_last)[0])
-            pt = last_close * np.exp(r_pt)
-            lb = last_close * np.exp(r_lb)
-            ub = last_close * np.exp(r_ub)
+            m_pt = float(self._models_mean[h].predict(X_last)[0])
+            m_lb = float(self._models_lower[h].predict(X_last)[0])
+            m_ub = float(self._models_upper[h].predict(X_last)[0])
+            if self.predict_returns:
+                # Models output cumulative log returns → reconstruct USD price.
+                pt = last_close * np.exp(m_pt)
+                lb = last_close * np.exp(m_lb)
+                ub = last_close * np.exp(m_ub)
+            else:
+                # Models output absolute price directly.
+                pt, lb, ub = m_pt, m_lb, m_ub
 
             # Guarantee lb <= pt <= ub
             lb = min(lb, pt)
