@@ -42,10 +42,12 @@ from analytics.forecasting.crypto.gru import GRUForecaster
 from analytics.forecasting.crypto.lightgbm_forecaster import LightGBMForecaster
 from analytics.forecasting.crypto.tft_forecaster import TFTForecaster
 from analytics.forecasting.crypto.assembly import CryptoAssemblyForecaster
+from analytics.forecasting.crypto.rf_assembly_forecaster import CryptoRFAssemblyForecaster
 
 __all__ = [
     "GRUForecaster",
     "LightGBMForecaster",
     "TFTForecaster",
     "CryptoAssemblyForecaster",
+    "CryptoRFAssemblyForecaster",
 ]
