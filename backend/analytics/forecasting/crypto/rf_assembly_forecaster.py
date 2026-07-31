@@ -73,19 +73,11 @@ import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
 
-# Flat, folder-local imports — this module runs inside crypto_eval_with_shap/
-# (with the folder on sys.path), exactly like assembly_forecaster.py, and
-# stacks the base models that live in THIS folder.
-from gru_forecaster import GRUForecaster, _TORCH_OK
-from lightgbm_forecaster import LightGBMForecaster, _LGB_OK
-from nhits_forecaster import NHiTSForecaster, _NHITS_OK
-
-# TFT is NOT part of the crypto_eval_with_shap base-model set (there is no
-# tft_forecaster.py in this folder). The use_tft flag is kept for API parity
-# with the package-level RF assembly but defaults off here and raises if
-# enabled — see __init__.
-_TFT_OK = False
-TFTForecaster = None  # type: ignore
+from analytics.forecasting.base import BaseForecastor
+from analytics.forecasting.crypto.gru import GRUForecaster
+from analytics.forecasting.crypto.lightgbm_forecaster import LightGBMForecaster
+from analytics.forecasting.crypto.nhits_forecaster import NHiTSForecaster
+from analytics.forecasting.crypto.tft_forecaster import TFTForecaster
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +97,7 @@ _DEFAULT_RF_GRID: Dict[str, list] = {
 }
 
 
-class CryptoRFAssemblyForecaster:
+class CryptoRFAssemblyForecaster(BaseForecastor):
     """
     Random Forest stacking ensemble combining GRU, N-HiTS, LightGBM and TFT.
 
@@ -172,8 +164,8 @@ class CryptoRFAssemblyForecaster:
         lgb_kwargs: Optional[Dict[str, Any]] = None,
         tft_kwargs: Optional[Dict[str, Any]] = None,
         min_train_size: int = 120,
-        use_gru: bool = True,
-        use_tft: bool = False,
+        use_gru: bool = False,
+        use_tft: bool = True,
         nhits_kwargs: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
@@ -196,20 +188,6 @@ class CryptoRFAssemblyForecaster:
         self.min_train_size = min_train_size
         self.use_gru = use_gru
         self.use_tft = use_tft
-
-        # ── Availability guards for the folder-local base models ─────────────
-        if use_tft:
-            raise ValueError(
-                "use_tft=True is not supported in crypto_eval_with_shap/: there "
-                "is no tft_forecaster.py in this folder. The base models here are "
-                "N-HiTS + LightGBM (+ GRU). Leave use_tft=False."
-            )
-        if not _NHITS_OK:
-            raise ImportError("neuralforecast required for N-HiTS base model")
-        if not _LGB_OK:
-            raise ImportError("lightgbm required for LightGBM base model")
-        if use_gru and not _TORCH_OK:
-            raise ImportError("PyTorch required for the GRU base model (or set use_gru=False)")
 
         self._gru_kwargs   = gru_kwargs or {}
         self._lgb_kwargs   = lgb_kwargs or {}
@@ -468,19 +446,7 @@ class CryptoRFAssemblyForecaster:
             raise ValueError("Call fit() before forecast()")
 
         lgb_result   = self._lgb.forecast(periods=periods)
-        # The folder-local N-HiTS may not expose forecast_with_sentiment; fall
-        # back to a plain forecast so the ensemble still runs.
-        if hasattr(self._nhits, "forecast_with_sentiment"):
-            nhits_result = self._nhits.forecast_with_sentiment(
-                periods=periods, nova_sentiment=nova_sentiment
-            )
-        else:
-            logger.warning(
-                "N-HiTS base model has no forecast_with_sentiment(); "
-                "ignoring nova_sentiment=%s and using plain forecast().",
-                nova_sentiment,
-            )
-            nhits_result = self._nhits.forecast(periods=periods)
+        nhits_result = self._nhits.forecast_with_sentiment(periods=periods, nova_sentiment=nova_sentiment)
         tft_result   = self._tft.forecast(periods=periods) if self.use_tft and self._tft else None
         gru_result   = self._gru.forecast(periods=periods) if self.use_gru and self._gru else None
 
@@ -801,24 +767,6 @@ class CryptoRFAssemblyForecaster:
                 "(OOF training across 3 folds + base model minimums)"
             )
 
-    @staticmethod
-    def _infer_freq_days(index: pd.DatetimeIndex) -> int:
-        """
-        Infer the bar frequency in calendar days from a DatetimeIndex, using the
-        median gap between timestamps (robust to weekend/holiday gaps).
-        Returns 1 (daily), 7 (weekly) or 30 (monthly). Copied from
-        BaseForecastor so this module stays self-contained with flat imports.
-        """
-        if len(index) < 2:
-            return 1
-        deltas = np.diff(index.asi8) / 1e9 / 86400  # nanoseconds → days
-        median_days = float(np.median(deltas))
-        if median_days < 3:
-            return 1
-        if median_days < 10:
-            return 7
-        return 30
-
     def get_feature_importances(self) -> Optional[Dict[str, float]]:
         """
         Return {meta_feature_name: importance} sorted descending, or None if
@@ -851,7 +799,7 @@ class CryptoRFAssemblyForecaster:
         return self._rf_tuning_results
 
     def get_model_info(self) -> Dict[str, Any]:
-        info: Dict[str, Any] = {"class": self.__class__.__name__}
+        info = super().get_model_info()
         info.update(
             {
                 "display_name": "RF Assembly (N-HiTS + LightGBM + TFT)",
