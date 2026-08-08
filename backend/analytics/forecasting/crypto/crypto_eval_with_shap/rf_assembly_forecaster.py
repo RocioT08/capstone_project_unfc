@@ -76,6 +76,7 @@ from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
 # Flat, folder-local imports — this module runs inside crypto_eval_with_shap/
 # (with the folder on sys.path), exactly like assembly_forecaster.py, and
 # stacks the base models that live in THIS folder.
+from common import truncate_fg
 from gru_forecaster import GRUForecaster, _TORCH_OK
 from lightgbm_forecaster import LightGBMForecaster, _LGB_OK
 from nhits_forecaster import NHiTSForecaster, _NHITS_OK
@@ -286,7 +287,11 @@ class CryptoRFAssemblyForecaster:
                 logger.info("Fold %d: val too small, skipping", fold)
                 continue
 
-            fold_preds = self._fit_and_predict_fold(train_ohlcv, fear_greed)
+            # Truncate sentiment at the fold's training cutoff — same guard the
+            # gated-Ridge assembly applies, so neither ensemble can see a
+            # Fear & Greed value dated after the data it was fitted on.
+            fold_fg = truncate_fg(fear_greed, train_ohlcv.index[-1])
+            fold_preds = self._fit_and_predict_fold(train_ohlcv, fold_fg)
 
             if fold_preds is None:
                 continue
@@ -335,6 +340,10 @@ class CryptoRFAssemblyForecaster:
             logger.info("OOF metrics: %s", self._oof_metrics)
 
         # ── Step 3: Retrain all base models on full dataset ───────────────
+        # Every base model receives fear_greed, matching the gated-Ridge
+        # assembly. Both ensembles must give their base learners the SAME
+        # inputs, otherwise a Ridge-vs-RF comparison measures sentiment access
+        # as well as the meta-learner.
         logger.info("Retraining all base models on full dataset...")
         if self.use_gru:
             self._gru = GRUForecaster(
@@ -342,7 +351,7 @@ class CryptoRFAssemblyForecaster:
                 confidence_level=self.confidence_level,
                 **self._gru_kwargs,
             )
-            self._gru.fit(ohlcv)
+            self._gru.fit(ohlcv, fear_greed=fear_greed)
 
         self._nhits = NHiTSForecaster(
             max_horizon=self.max_horizon,
@@ -356,7 +365,7 @@ class CryptoRFAssemblyForecaster:
             confidence_level=self.confidence_level,
             **self._lgb_kwargs,
         )
-        self._lgb.fit(ohlcv)
+        self._lgb.fit(ohlcv, fear_greed=fear_greed)
 
         if self.use_tft:
             self._tft = TFTForecaster(
@@ -545,6 +554,8 @@ class CryptoRFAssemblyForecaster:
             np.ndarray of shape (max_horizon, n_meta_features), or None on error.
         """
         try:
+            # fear_greed is already truncated at this fold's cutoff by the
+            # caller. Every base model gets it — see the note in fit().
             gr = None
             if self.use_gru:
                 gru = GRUForecaster(
@@ -552,7 +563,7 @@ class CryptoRFAssemblyForecaster:
                     confidence_level=self.confidence_level,
                     **self._gru_kwargs,
                 )
-                gru.fit(train_ohlcv)
+                gru.fit(train_ohlcv, fear_greed=fear_greed)
                 gr = gru.forecast(periods=self.max_horizon)
 
             nhits = NHiTSForecaster(
@@ -568,7 +579,7 @@ class CryptoRFAssemblyForecaster:
                 confidence_level=self.confidence_level,
                 **self._lgb_kwargs,
             )
-            lgb.fit(train_ohlcv)
+            lgb.fit(train_ohlcv, fear_greed=fear_greed)
             lr = lgb.forecast(periods=self.max_horizon)
 
             tr = None
