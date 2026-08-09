@@ -140,6 +140,23 @@ class CryptoRFAssemblyForecaster:
                              uses the small conservative _DEFAULT_RF_GRID.
         rf_tune_cv:          TimeSeriesSplit folds for the RF grid search. Tuning
                              is skipped if OOF rows < 2 * rf_tune_cv.
+        meta_target:         What the Random Forest predicts. 'ratio' (default)
+                             = actual / last_close of the fold's training data;
+                             every price-like meta-feature is divided by that
+                             same anchor and the prediction is rebuilt as
+                             ratio * last_close. 'price' = raw USD (original).
+
+                             'price' is STRUCTURALLY BROKEN on a trending coin.
+                             A Random Forest predicts the average of the target
+                             values stored in its leaves, so it can never output
+                             a value above the largest target it saw in
+                             training. On BNB-USD the OOF targets top out near
+                             $512 while the entire 20% test region lies between
+                             $532 and $1310 — 100% above that ceiling — giving
+                             ~37% MAPE against ~4-5% for the individual base
+                             models. Ratios have no ceiling: they stay near 1.0
+                             at any price level. Keep 'price' only to reproduce
+                             that failure as a deliberate ablation.
         random_state:        Seed for reproducible forests.
         confidence_level:    CI probability mass (passed to base models).
         gru_kwargs:          Extra kwargs forwarded to GRUForecaster.
@@ -167,6 +184,7 @@ class CryptoRFAssemblyForecaster:
         tune_rf: bool = True,
         rf_param_grid: Optional[Dict[str, list]] = None,
         rf_tune_cv: int = 3,
+        meta_target: str = "ratio",
         random_state: int = 42,
         confidence_level: float = 0.95,
         gru_kwargs: Optional[Dict[str, Any]] = None,
@@ -192,6 +210,12 @@ class CryptoRFAssemblyForecaster:
         self.tune_rf = tune_rf
         self.rf_param_grid = rf_param_grid
         self.rf_tune_cv = rf_tune_cv
+
+        if meta_target not in ("ratio", "price"):
+            raise ValueError(
+                f"meta_target must be 'ratio' or 'price', got {meta_target!r}"
+            )
+        self.meta_target = meta_target
         self.random_state = random_state
         self.confidence_level = confidence_level
         self.min_train_size = min_train_size
@@ -231,6 +255,8 @@ class CryptoRFAssemblyForecaster:
         self._freq_days: int = 1
         self._is_fitted: bool = False
         self._oof_metrics: Dict[str, Any] = {}
+        # Scale anchor set by fit(); 1.0 keeps 'price' mode a pure no-op.
+        self._fit_anchor: float = 1.0
         self._rf_tuning_results: Dict[str, Any] = {}
 
     # ── fit ──────────────────────────────────────────────────────────────
@@ -269,7 +295,10 @@ class CryptoRFAssemblyForecaster:
 
         # ── Step 1: Out-of-fold meta-feature collection ───────────────────
         oof_meta: List[np.ndarray] = []   # shape each: (max_horizon, n_meta_features)
-        oof_targets: List[np.ndarray] = []  # shape each: (max_horizon,) actual close
+        oof_targets: List[np.ndarray] = []  # shape each: (max_horizon,) target
+        # Per-row anchors, kept so the OOF metrics below can be reported in USD
+        # even when the meta-learner is trained on ratios.
+        oof_anchors: List[np.ndarray] = []
 
         tscv = TimeSeriesSplit(n_splits=self.n_splits)
         indices = np.arange(len(ohlcv))
@@ -300,8 +329,13 @@ class CryptoRFAssemblyForecaster:
             if len(actual) < self.max_horizon:
                 actual = np.pad(actual, (0, self.max_horizon - len(actual)), mode="edge")
 
+            # Target in the SAME space as the meta-features: actual / anchor in
+            # 'ratio' mode, raw USD in 'price' mode (anchor == 1.0).
+            fold_anchor = self._anchor_for(train_ohlcv)
+
             oof_meta.append(fold_preds)
-            oof_targets.append(actual)
+            oof_targets.append(np.asarray(actual, dtype=np.float64) / fold_anchor)
+            oof_anchors.append(np.full(self.max_horizon, fold_anchor, dtype=np.float64))
             logger.info("Fold %d: OOF predictions collected", fold)
 
         # ── Step 2: Train Random Forest meta-learner ─────────────────────
@@ -316,26 +350,39 @@ class CryptoRFAssemblyForecaster:
             y_meta = np.concatenate(oof_targets)  # (folds * max_horizon,)
 
             # No StandardScaler: Random Forest splits on per-feature thresholds
-            # and is scale-invariant, so raw meta-features are fed directly.
+            # and is scale-invariant, so the meta-features are fed directly.
+            # In 'ratio' mode they are already anchored to each fold's last
+            # close, which is what removes the extrapolation ceiling — scaling
+            # is about the TARGET range, not feature variance.
             # Grid-search the RF hyperparameters on the OOF meta-set when enabled.
             self._meta_model = self._fit_meta_learner(X_meta, y_meta)
             logger.info(
-                "Random Forest meta-learner trained on %d OOF samples", len(y_meta)
+                "Random Forest meta-learner trained on %d OOF samples "
+                "(meta_target=%s)", len(y_meta), self.meta_target
             )
 
             # ── OOF error metrics per base model (col 0=nhits, 1=lgb[, 2=tft]) ──
+            # Reported in USD in BOTH modes: multiply back by each row's anchor
+            # so 'ratio' and 'price' runs stay directly comparable.
+            anchors = np.concatenate(oof_anchors)
             ensemble_preds = self._meta_model.predict(X_meta)
+
+            def _usd(v: np.ndarray) -> np.ndarray:
+                return np.asarray(v, dtype=np.float64) * anchors
+
+            y_usd = _usd(y_meta)
             oof_metrics: Dict[str, Any] = {
-                "nhits":    self._compute_metrics(y_meta, X_meta[:, 0]),
-                "lightgbm": self._compute_metrics(y_meta, X_meta[:, 1]),
-                "ensemble": self._compute_metrics(y_meta, ensemble_preds),
+                "nhits":    self._compute_metrics(y_usd, _usd(X_meta[:, 0])),
+                "lightgbm": self._compute_metrics(y_usd, _usd(X_meta[:, 1])),
+                "ensemble": self._compute_metrics(y_usd, _usd(ensemble_preds)),
                 "n_oof_samples": int(len(y_meta)),
+                "meta_target": self.meta_target,
             }
             if self.use_tft:
-                oof_metrics["tft"] = self._compute_metrics(y_meta, X_meta[:, 2])
+                oof_metrics["tft"] = self._compute_metrics(y_usd, _usd(X_meta[:, 2]))
             if self.use_gru:
                 gru_col = 13 if self.use_tft else 9
-                oof_metrics["gru"] = self._compute_metrics(y_meta, X_meta[:, gru_col])
+                oof_metrics["gru"] = self._compute_metrics(y_usd, _usd(X_meta[:, gru_col]))
             self._oof_metrics = oof_metrics
             logger.info("OOF metrics: %s", self._oof_metrics)
 
@@ -375,8 +422,12 @@ class CryptoRFAssemblyForecaster:
             )
             self._tft.fit(ohlcv)
 
+        # Anchor for forecast(): the last close of the data just fitted on.
+        self._fit_anchor = self._anchor_for(ohlcv)
+
         self._is_fitted = True
-        logger.info("CryptoRFAssemblyForecaster: fit complete")
+        logger.info("CryptoRFAssemblyForecaster: fit complete (meta_target=%s, "
+                    "anchor=%.4f)", self.meta_target, self._fit_anchor)
 
     # ── forecast ─────────────────────────────────────────────────────────
 
@@ -414,12 +465,19 @@ class CryptoRFAssemblyForecaster:
         dates = lgb_result["dates"]
         pts, lbs, ubs = [], [], []
 
+        # Same anchor the meta-learner was trained against: the last close of
+        # the data fit() saw. 1.0 in 'price' mode.
+        anchor = self._fit_anchor
+
         for h in range(periods):
-            meta_row = self._build_meta_row(h, gru_result, nhits_result, lgb_result, tft_result, self.use_gru, self.use_tft)
+            meta_row = self._build_meta_row(h, gru_result, nhits_result, lgb_result,
+                                            tft_result, self.use_gru, self.use_tft,
+                                            anchor)
 
             if self._meta_model is not None:
-                # No scaling: Random Forest consumes raw meta-features.
-                pt = float(self._meta_model.predict(meta_row.reshape(1, -1))[0])
+                # The RF predicts in the same space as its training target, so
+                # in 'ratio' mode multiply back to USD.
+                pt = float(self._meta_model.predict(meta_row.reshape(1, -1))[0]) * anchor
             else:
                 available = [lgb_result["point_forecast"][h], nhits_result["point_forecast"][h]]
                 if tft_result:
@@ -496,11 +554,16 @@ class CryptoRFAssemblyForecaster:
         dates = lgb_result["dates"]
         pts, lbs, ubs = [], [], []
 
+        # Same anchor the meta-learner was trained against (1.0 in 'price' mode).
+        anchor = self._fit_anchor
+
         for h in range(periods):
-            meta_row = self._build_meta_row(h, gru_result, nhits_result, lgb_result, tft_result, self.use_gru, self.use_tft)
+            meta_row = self._build_meta_row(h, gru_result, nhits_result, lgb_result,
+                                            tft_result, self.use_gru, self.use_tft,
+                                            anchor)
 
             if self._meta_model is not None:
-                pt = float(self._meta_model.predict(meta_row.reshape(1, -1))[0])
+                pt = float(self._meta_model.predict(meta_row.reshape(1, -1))[0]) * anchor
             else:
                 available = [lgb_result["point_forecast"][h], nhits_result["point_forecast"][h]]
                 if tft_result:
@@ -592,9 +655,14 @@ class CryptoRFAssemblyForecaster:
                 tft.fit(train_ohlcv)
                 tr = tft.forecast(periods=self.max_horizon)
 
+            # Anchor = last close the base models actually saw. In 'price' mode
+            # this is 1.0, leaving the row in raw USD.
+            anchor = self._anchor_for(train_ohlcv)
+
             rows = []
             for h in range(self.max_horizon):
-                row = self._build_meta_row(h, gr, nr, lr, tr, self.use_gru, self.use_tft)
+                row = self._build_meta_row(h, gr, nr, lr, tr, self.use_gru,
+                                           self.use_tft, anchor)
                 rows.append(row)
             return np.vstack(rows)
 
@@ -752,6 +820,7 @@ class CryptoRFAssemblyForecaster:
         tft_result: Optional[Dict[str, Any]],
         use_gru: bool = False,
         use_tft: bool = True,
+        anchor: float = 1.0,
     ) -> np.ndarray:
         """
         Build a 1-D meta-feature vector for horizon step h.
@@ -761,15 +830,26 @@ class CryptoRFAssemblyForecaster:
           + TFT:          tft  pt/lb/ub/spread                                      → +4 (total 13)
           + GRU:          gru  pt/lb/ub/spread                                      → +4 (total 13 or 17)
 
+        Every price-like feature is divided by ``anchor`` (the last close of the
+        data the base models were fitted on). With anchor=1.0 the row is raw USD,
+        which is the meta_target='price' behaviour. With the real anchor the row
+        is scale-free: the RF splits on thresholds like "nhits_pt > 1.02" that
+        mean the same thing whether the coin trades at $20 or $1300. Splits on
+        raw USD thresholds are meaningless outside the trained price range.
+
+        ``horizon_step`` is NOT a price and is never scaled.
+
         Must stay in sync with ``_build_meta_feature_names``.
         """
-        nhits_pt = nhits_result["point_forecast"][h]
-        nhits_lb = nhits_result["lower_bound"][h]
-        nhits_ub = nhits_result["upper_bound"][h]
+        a = float(anchor) if anchor else 1.0
 
-        lgb_pt = lgb_result["point_forecast"][h]
-        lgb_lb = lgb_result["lower_bound"][h]
-        lgb_ub = lgb_result["upper_bound"][h]
+        nhits_pt = nhits_result["point_forecast"][h] / a
+        nhits_lb = nhits_result["lower_bound"][h] / a
+        nhits_ub = nhits_result["upper_bound"][h] / a
+
+        lgb_pt = lgb_result["point_forecast"][h] / a
+        lgb_lb = lgb_result["lower_bound"][h] / a
+        lgb_ub = lgb_result["upper_bound"][h] / a
 
         base = np.array([
             nhits_pt, lgb_pt,
@@ -777,24 +857,41 @@ class CryptoRFAssemblyForecaster:
             nhits_ub, lgb_ub,
             nhits_ub - nhits_lb,
             lgb_ub   - lgb_lb,
-            float(h + 1),
+            float(h + 1),          # horizon index — not a price, never scaled
         ], dtype=np.float64)
 
         if use_tft and tft_result is not None:
-            tft_pt = tft_result["point_forecast"][h]
-            tft_lb = tft_result["lower_bound"][h]
-            tft_ub = tft_result["upper_bound"][h]
+            tft_pt = tft_result["point_forecast"][h] / a
+            tft_lb = tft_result["lower_bound"][h] / a
+            tft_ub = tft_result["upper_bound"][h] / a
             tft_extra = np.array([tft_pt, tft_lb, tft_ub, tft_ub - tft_lb], dtype=np.float64)
             base = np.concatenate([base, tft_extra])
 
         if use_gru and gru_result is not None:
-            gru_pt = gru_result["point_forecast"][h]
-            gru_lb = gru_result["lower_bound"][h]
-            gru_ub = gru_result["upper_bound"][h]
+            gru_pt = gru_result["point_forecast"][h] / a
+            gru_lb = gru_result["lower_bound"][h] / a
+            gru_ub = gru_result["upper_bound"][h] / a
             gru_extra = np.array([gru_pt, gru_lb, gru_ub, gru_ub - gru_lb], dtype=np.float64)
             base = np.concatenate([base, gru_extra])
 
         return base
+
+    def _anchor_for(self, ohlcv: pd.DataFrame) -> float:
+        """
+        Scale anchor for the meta-features and target: the last close of the
+        data the base models were fitted on. Returns 1.0 in 'price' mode so the
+        whole normalisation collapses to a no-op and the original behaviour is
+        reproduced exactly.
+        """
+        if self.meta_target == "price":
+            return 1.0
+        anchor = float(ohlcv["Close"].iloc[-1])
+        if not np.isfinite(anchor) or anchor <= 0:
+            raise ValueError(
+                f"Cannot anchor meta-features: last close is {anchor!r}. "
+                "Check the OHLCV data passed to fit()."
+            )
+        return anchor
 
     @staticmethod
     def _validate_ohlcv(ohlcv: pd.DataFrame) -> None:
@@ -874,6 +971,8 @@ class CryptoRFAssemblyForecaster:
                 "rf_min_samples_leaf": self.rf_min_samples_leaf,
                 "rf_max_features": self.rf_max_features,
                 "tune_rf": self.tune_rf,
+                "meta_target": self.meta_target,
+                "fit_anchor": self._fit_anchor,
                 "rf_tuning": self._rf_tuning_results,
                 "random_state": self.random_state,
                 "confidence_level": self.confidence_level,
