@@ -70,6 +70,22 @@ def _get_pipeline():
     raise RuntimeError(f"Could not load any Chronos pipeline: {last_err}")
 
 
+def _to_numpy(value: Any) -> np.ndarray:
+    """
+    Convert whatever predict_quantiles returned into a numpy array.
+
+    Chronos-2 returns a LIST of torch tensors, and on Colab the pipeline is
+    loaded with device_map="cuda" so those tensors live on the GPU. Calling
+    np.asarray() on a CUDA tensor raises "can't convert cuda:0 device type
+    tensor to numpy", so each tensor has to be moved to CPU first.
+    """
+    if isinstance(value, (list, tuple)):
+        return np.asarray([_to_numpy(v) for v in value])
+    if hasattr(value, "detach"):          # torch.Tensor, possibly on GPU
+        return value.detach().to("cpu").numpy()
+    return np.asarray(value)
+
+
 class ChronosForecaster:
     """Zero-shot benchmark with the same fit()/forecast() API as the others.
     fear_greed is accepted and ignored (univariate model)."""
@@ -100,17 +116,29 @@ class ChronosForecaster:
         qlevels = [alpha / 2, 0.5, 1 - alpha / 2]
         ctx = torch.tensor(self._context)
 
-        # API shape differs across chronos-forecasting versions — try the
-        # tensor interface first, then the list-of-dict (Chronos-2) form.
-        try:
-            quantiles, _mean = pipeline.predict_quantiles(
-                ctx, prediction_length=periods, quantile_levels=qlevels)
-        except (TypeError, AttributeError):
-            quantiles, _mean = pipeline.predict_quantiles(
-                [{"target": self._context}],
-                prediction_length=periods, quantile_levels=qlevels)
+        # The accepted input shape differs across chronos-forecasting versions:
+        #   Chronos-Bolt / ChronosPipeline : a bare 1-D tensor.
+        #   Chronos-2 (>=2.x)              : a SEQUENCE of series, or a 3-D
+        #                                    tensor (n_series, n_variates, len).
+        # Chronos-2 rejects the 1-D form with ValueError ("should be 3-d"), so
+        # ValueError must be caught here — catching only TypeError/AttributeError
+        # let it escape and every walk-forward window failed.
+        quantiles = None
+        last_err = None
+        for candidate in (ctx, [ctx], [{"target": self._context}]):
+            try:
+                quantiles, _mean = pipeline.predict_quantiles(
+                    candidate, prediction_length=periods,
+                    quantile_levels=qlevels)
+                break
+            except (TypeError, AttributeError, ValueError) as exc:
+                last_err = exc
+        if quantiles is None:
+            raise RuntimeError(
+                f"No supported Chronos predict_quantiles input form: {last_err}"
+            )
 
-        q = np.asarray(quantiles)
+        q = _to_numpy(quantiles)
         while q.ndim > 3:
             q = q[0]
         if q.ndim == 3:                    # (batch, horizon, quantile)
