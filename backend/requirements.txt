@@ -51,10 +51,12 @@ highspy==1.13.1
 
 # ── Forecasting models ─────────────────────────────────────────────────────────
 chronos-forecasting>=2.0
-neuralforecast>=1.7.0
-lightgbm>=4.0.0
-torch>=2.0.0
-lightning>=2.0.0
+# Pinned to the versions the joblib checkpoints were saved with — newer
+# releases add attributes old pickles lack (e.g. neuralforecast 3.3 categorical_vocab_).
+neuralforecast==3.1.5
+lightgbm==4.6.0
+torch==2.10.0
+lightning==2.6.1
 
 # ── Caching ───────────────────────────────────────────────────────────────────
 fastapi-cache2==0.2.2
