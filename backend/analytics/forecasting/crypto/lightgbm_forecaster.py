@@ -154,6 +154,10 @@ class LightGBMForecaster(BaseForecastor):
     >>> result = forecaster.forecast(periods=7)  # 1, 7, 14 or 21
     """
 
+    # Class-level default so models pickled before this flag existed still load
+    # (joblib skips __init__); they were trained on absolute price.
+    predict_returns: bool = False
+
     def __init__(
         self,
         lags: int = 14,
