@@ -213,8 +213,9 @@ async def chat(req: ChatRequest) -> ChatResponse:
                 "Content-Type": "application/json",
             },
             json={
-                "model": "llama-3.3-70b-versatile",
-                "max_tokens": 600,
+                "model": "openai/gpt-oss-120b",
+                "reasoning_effort": "low",
+                "max_tokens": 1000,
                 "temperature": 0.65,
                 "messages": messages,
             },

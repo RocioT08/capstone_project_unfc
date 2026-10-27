@@ -270,9 +270,10 @@ async def _generate_content(module_id: str) -> dict:
             "https://api.groq.com/openai/v1/chat/completions",
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             json={
-                "model": "llama-3.3-70b-versatile",
+                "model": "openai/gpt-oss-120b",
+                "reasoning_effort": "low",
                 "temperature": 0.4,
-                "max_tokens": 3000,
+                "max_tokens": 4000,
                 "response_format": {"type": "json_object"},
                 "messages": [
                     {
